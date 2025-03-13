@@ -1135,6 +1135,7 @@ class DesignOfExperiments:
         if self.objective_option not in [
             ObjectiveLib.determinant,
             ObjectiveLib.trace,
+            ObjectiveLib.minimum_eigenvalue,
             ObjectiveLib.zero,
         ]:
             raise AttributeError(
@@ -1237,6 +1238,15 @@ class DesignOfExperiments:
                 for d in range(len(list_p))
             )
             return m.determinant == det_perm
+        
+        def min_eig_diagonal_constraints(b, p):
+            """
+            Set bounding constraints for minimum diagonal
+            value in the FIM.
+            """
+            m = b.model()
+            return m.fim[p, p] >= m.minimum_diagonal
+
 
         if self.Cholesky_option and self.objective_option == ObjectiveLib.determinant:
             model.obj_cons.cholesky_cons = pyo.Constraint(
@@ -1264,6 +1274,26 @@ class DesignOfExperiments:
             model.objective = pyo.Objective(
                 expr=pyo.log10(model.trace), sense=pyo.maximize
             )
+
+        elif self.objective_option == ObjectiveLib.minimum_eigenvalue:
+            # Use the fact that the minimum eigenvalue is
+            # smaller than or equal to the minimum diagonal
+            # element. Inspired by formulation 7.27 in 
+            # Convex Optimization by Boyd and Vandenberghe
+            #
+            # Minimum eigenvalue bounded by minimum diagonal element
+            # To-Do: initialize minimum diagonal better
+            model.minimum_diagonal = pyo.Var(
+                initialize=1, bounds=(small_number, None)
+            )
+            # Add constraints on each diagonal element
+            model.obj_cons.minimum_diagonal_constraints = pyo.Constraint(
+                model.parameter_names, rule=min_eig_diagonal_constraints
+            )
+            model.objective = pyo.Objective(
+                expr=pyo.log10(model.minimum_diagonal), sense=pyo.maximize
+            )
+
 
         elif self.objective_option == ObjectiveLib.zero:
             # add dummy objective function
