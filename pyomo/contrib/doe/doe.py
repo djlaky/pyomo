@@ -816,6 +816,15 @@ class DesignOfExperiments:
             model.fim = pyo.Var(
                 model.parameter_names, model.parameter_names, initialize=identity_matrix
             )
+        
+        # Create the prior FIM variable and fix it.
+        def initialize_prior_fim(m, c, d):
+            return self.prior_FIM[list(m.parameter_names).index(c), list(m.parameter_names).index(d)]
+
+        model.prior_FIM = pyo.Var(
+            model.parameter_names, model.parameter_names, initialize=initialize_prior_fim
+        )
+        model.prior_FIM.fix()
 
         # To-Do: Look into this functionality.....
         # if cholesky, define L elements as variables
@@ -925,7 +934,6 @@ class DesignOfExperiments:
                         * m.sensitivity_jacobian[n, q]
                         for n in m.output_names
                     )
-                    + m.prior_FIM[p, q]
                 )
 
         model.jacobian_constraint = pyo.Constraint(
@@ -1153,9 +1161,9 @@ class DesignOfExperiments:
 
         # Assemble the FIM matrix. This is helpful for initialization!
         fim_vals = [
-            model.fim[bu, un].value
-            for i, bu in enumerate(model.parameter_names)
-            for j, un in enumerate(model.parameter_names)
+            pyo.value(model.fim[i, j].value) + pyo.value(model.prior_FIM[i, j])
+            for i in model.parameter_names
+            for j in model.parameter_names
         ]
         fim = np.array(fim_vals).reshape(
             len(model.parameter_names), len(model.parameter_names)
@@ -1164,6 +1172,7 @@ class DesignOfExperiments:
         ### Initialize the Cholesky decomposition matrix
         if self.Cholesky_option and self.objective_option == ObjectiveLib.determinant:
             # Calculate the eigenvalues of the FIM matrix
+            print(fim)
             eig = np.linalg.eigvals(fim)
 
             # If the smallest eigenvalue is (practically) negative, add a diagonal matrix to make it positive definite
@@ -1190,7 +1199,7 @@ class DesignOfExperiments:
             # This region is where our equations are well-defined.
             m = b.model()
             if list(m.parameter_names).index(c) >= list(m.parameter_names).index(d):
-                return m.fim[c, d] == sum(
+                return m.fim[c, d] + m.prior_FIM[c, d] == sum(
                     m.L[c, m.parameter_names.at(k + 1)]
                     * m.L[d, m.parameter_names.at(k + 1)]
                     for k in range(list(m.parameter_names).index(d) + 1)
@@ -1204,7 +1213,7 @@ class DesignOfExperiments:
             Calculate FIM elements. Can scale each element with 1000 for performance
             """
             m = b.model()
-            return m.trace == sum(m.fim[j, j] for j in m.parameter_names)
+            return m.trace == sum(m.fim[j, j] + m.prior_FIM[j, j] for j in m.parameter_names)
 
         def determinant_general(b):
             r"""Calculate determinant. Can be applied to FIM of any size.
@@ -1231,7 +1240,8 @@ class DesignOfExperiments:
             det_perm = sum(
                 self._sgn(list_p[d])
                 * math.prod(
-                    m.fim[m.parameter_names.at(val + 1), m.parameter_names.at(ind + 1)]
+                    m.fim[m.parameter_names.at(val + 1), m.parameter_names.at(ind + 1)] + 
+                    m.prior_FIM[m.parameter_names.at(val + 1), m.parameter_names.at(ind + 1)]
                     for ind, val in enumerate(list_p[d])
                 )
                 for d in range(len(list_p))
@@ -2037,7 +2047,7 @@ class DesignOfExperiments:
             )
 
         fim_vals = [
-            pyo.value(model.fim[i, j])
+            pyo.value(model.fim[i, j]) + pyo.value(model.prior_FIM[i, j])
             for i in model.parameter_names
             for j in model.parameter_names
         ]
