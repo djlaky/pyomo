@@ -301,7 +301,7 @@ class DesignOfExperiments:
         if hasattr(model, "L"):
             # Get the FIM values
             fim_vals = [
-                pyo.value(model.fim[i, j])
+                pyo.value(model.fim[i, j]) + pyo.value(model.prior_FIM[i, j])
                 for i in model.parameter_names
                 for j in model.parameter_names
             ]
@@ -816,13 +816,17 @@ class DesignOfExperiments:
             model.fim = pyo.Var(
                 model.parameter_names, model.parameter_names, initialize=identity_matrix
             )
-        
+
         # Create the prior FIM variable and fix it.
         def initialize_prior_fim(m, c, d):
-            return self.prior_FIM[list(m.parameter_names).index(c), list(m.parameter_names).index(d)]
+            return self.prior_FIM[
+                list(m.parameter_names).index(c), list(m.parameter_names).index(d)
+            ]
 
         model.prior_FIM = pyo.Var(
-            model.parameter_names, model.parameter_names, initialize=initialize_prior_fim
+            model.parameter_names,
+            model.parameter_names,
+            initialize=initialize_prior_fim,
         )
         model.prior_FIM.fix()
 
@@ -923,17 +927,14 @@ class DesignOfExperiments:
                 else:
                     return m.fim[p, q] == m.fim[q, p]
             else:
-                return (
-                    m.fim[p, q]
-                    == sum(
-                        1
-                        / m.scenario_blocks[0].measurement_error[
-                            pyo.ComponentUID(n).find_component_on(m.scenario_blocks[0])
-                        ]
-                        * m.sensitivity_jacobian[n, p]
-                        * m.sensitivity_jacobian[n, q]
-                        for n in m.output_names
-                    )
+                return m.fim[p, q] == sum(
+                    1
+                    / m.scenario_blocks[0].measurement_error[
+                        pyo.ComponentUID(n).find_component_on(m.scenario_blocks[0])
+                    ]
+                    * m.sensitivity_jacobian[n, p]
+                    * m.sensitivity_jacobian[n, q]
+                    for n in m.output_names
                 )
 
         model.jacobian_constraint = pyo.Constraint(
@@ -1091,7 +1092,15 @@ class DesignOfExperiments:
             pyo.ComponentUID(param, context=m.base_model).find_component_on(
                 b
             ).set_value(m.base_model.unknown_parameters[param] * (1 + diff))
+            # Fix experiment inputs before solve (enforce square solve)
+            for comp in b.experiment_inputs:
+                comp.fix()
+
             res = self.solver.solve(b, tee=self.tee)
+
+            # Unfix experiment inputs after square solve
+            for comp in b.experiment_inputs:
+                comp.unfix()
 
         model.scenario_blocks = pyo.Block(model.scenarios, rule=build_block_scenarios)
 
@@ -1213,7 +1222,9 @@ class DesignOfExperiments:
             Calculate FIM elements. Can scale each element with 1000 for performance
             """
             m = b.model()
-            return m.trace == sum(m.fim[j, j] + m.prior_FIM[j, j] for j in m.parameter_names)
+            return m.trace == sum(
+                m.fim[j, j] + m.prior_FIM[j, j] for j in m.parameter_names
+            )
 
         def determinant_general(b):
             r"""Calculate determinant. Can be applied to FIM of any size.
@@ -1240,8 +1251,10 @@ class DesignOfExperiments:
             det_perm = sum(
                 self._sgn(list_p[d])
                 * math.prod(
-                    m.fim[m.parameter_names.at(val + 1), m.parameter_names.at(ind + 1)] + 
-                    m.prior_FIM[m.parameter_names.at(val + 1), m.parameter_names.at(ind + 1)]
+                    m.fim[m.parameter_names.at(val + 1), m.parameter_names.at(ind + 1)]
+                    + m.prior_FIM[
+                        m.parameter_names.at(val + 1), m.parameter_names.at(ind + 1)
+                    ]
                     for ind, val in enumerate(list_p[d])
                 )
                 for d in range(len(list_p))
