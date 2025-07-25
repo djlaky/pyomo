@@ -314,7 +314,8 @@ class DesignOfExperiments:
         # Deactivate objective expression and
         # objective constraints (on a block),
         # and fix the design variables.
-        model.objective.deactivate()
+        if not self.use_grey_box:
+            model.objective.deactivate()
         model.obj_cons.deactivate()
         for comp in model.scenario_blocks[0].experiment_inputs:
             comp.fix()
@@ -327,7 +328,8 @@ class DesignOfExperiments:
         # else:
         #     # The solver was unsuccessful, might want to warn the user
         #     # or terminate gracefully, etc.
-        model.dummy_obj = pyo.Objective(expr=0, sense=pyo.minimize)
+        if not self.use_grey_box:
+            model.dummy_obj = pyo.Objective(expr=0, sense=pyo.minimize)
         self.solver.solve(model, tee=self.tee)
 
         # Track time to initialize the DoE model
@@ -339,12 +341,18 @@ class DesignOfExperiments:
             )
         )
 
-        model.dummy_obj.deactivate()
+        if not self.use_grey_box:
+            model.dummy_obj.deactivate()
 
         # Reactivate objective and unfix experimental design decisions
         for comp in model.scenario_blocks[0].experiment_inputs:
+            break
             comp.unfix()
-        model.objective.activate()
+            comp.setlb(1.7)
+            comp.setub(1.78)
+
+        if not self.use_grey_box:
+            model.objective.activate()
         model.obj_cons.activate()
 
         if self.use_grey_box:
@@ -358,21 +366,21 @@ class DesignOfExperiments:
                             pyo.value(model.fim[(i, j)])
                         )
             # Set objective value
-            if self.objective_option == ObjectiveLib.trace:
-                # Do safe inverse here?
-                trace_val = 1 / np.trace(np.array(self.get_FIM()))
-                model.obj_cons.egb_fim_block.outputs["A-opt"].set_value(trace_val)
-            elif self.objective_option == ObjectiveLib.determinant:
-                det_val = np.linalg.det(np.array(self.get_FIM()))
-                model.obj_cons.egb_fim_block.outputs["log-D-opt"].set_value(
-                    np.log(det_val)
-                )
-            elif self.objective_option == ObjectiveLib.minimum_eigenvalue:
-                eig, _ = np.linalg.eig(np.array(self.get_FIM()))
-                model.obj_cons.egb_fim_block.outputs["E-opt"].set_value(np.min(eig))
-            elif self.objective_option == ObjectiveLib.condition_number:
-                cond_number = np.linalg.cond(np.array(self.get_FIM()))
-                model.obj_cons.egb_fim_block.outputs["ME-opt"].set_value(cond_number)
+            # if self.objective_option == ObjectiveLib.trace:
+            #     # Do safe inverse here?
+            #     trace_val = 1 / np.trace(np.array(self.get_FIM()))
+            #     model.obj_cons.egb_fim_block.outputs["A-opt"].set_value(trace_val)
+            # elif self.objective_option == ObjectiveLib.determinant:
+            #     det_val = np.linalg.det(np.array(self.get_FIM()))
+            #     model.obj_cons.egb_fim_block.outputs["log-D-opt"].set_value(
+            #         np.log(det_val)
+            #     )
+            # elif self.objective_option == ObjectiveLib.minimum_eigenvalue:
+            #     eig, _ = np.linalg.eig(np.array(self.get_FIM()))
+            #     model.obj_cons.egb_fim_block.outputs["E-opt"].set_value(np.min(eig))
+            # elif self.objective_option == ObjectiveLib.condition_number:
+            #     cond_number = np.linalg.cond(np.array(self.get_FIM()))
+            #     model.obj_cons.egb_fim_block.outputs["ME-opt"].set_value(cond_number)
 
         # If the model has L, initialize it with the solved FIM
         if hasattr(model, "L"):
@@ -422,7 +430,8 @@ class DesignOfExperiments:
 
         # Solve the full model, which has now been initialized with the square solve
         if self.use_grey_box:
-            res = self.grey_box_solver.solve(model, tee=self.grey_box_tee)
+            res, nlp = self.grey_box_solver.solve(model, tee=self.grey_box_tee, return_nlp=True)
+            self.nlp = nlp
         else:
             res = self.solver.solve(model, tee=self.tee)
 
@@ -1394,7 +1403,7 @@ class DesignOfExperiments:
                 model.parameter_names, model.parameter_names, rule=cholesky_imp
             )
             model.objective = pyo.Objective(
-                expr=2 * sum(pyo.log10(model.L[j, j]) for j in model.parameter_names),
+                expr=2 * sum(pyo.log(model.L[j, j]) for j in model.parameter_names),
                 sense=pyo.maximize,
             )
 
@@ -1406,7 +1415,7 @@ class DesignOfExperiments:
             )
             model.obj_cons.determinant_rule = pyo.Constraint(rule=determinant_general)
             model.objective = pyo.Objective(
-                expr=pyo.log10(model.determinant + 1e-6), sense=pyo.maximize
+                expr=pyo.log(model.determinant + 1e-6), sense=pyo.maximize
             )
 
         elif self.objective_option == ObjectiveLib.trace:
@@ -1471,23 +1480,23 @@ class DesignOfExperiments:
 
         # Add objective based on user provided
         # type within ObjectiveLib
-        if self.objective_option == ObjectiveLib.trace:
-            model.objective = pyo.Objective(
-                expr=model.obj_cons.egb_fim_block.outputs["A-opt"], sense=pyo.minimize
-            )
-        elif self.objective_option == ObjectiveLib.determinant:
-            model.objective = pyo.Objective(
-                expr=model.obj_cons.egb_fim_block.outputs["log-D-opt"],
-                sense=pyo.maximize,
-            )
-        elif self.objective_option == ObjectiveLib.minimum_eigenvalue:
-            model.objective = pyo.Objective(
-                expr=model.obj_cons.egb_fim_block.outputs["E-opt"], sense=pyo.maximize
-            )
-        elif self.objective_option == ObjectiveLib.condition_number:
-            model.objective = pyo.Objective(
-                expr=model.obj_cons.egb_fim_block.outputs["ME-opt"], sense=pyo.minimize
-            )
+        # if self.objective_option == ObjectiveLib.trace:
+        #     model.objective = pyo.Objective(
+        #         expr=model.obj_cons.egb_fim_block.outputs["A-opt"], sense=pyo.minimize
+        #     )
+        # elif self.objective_option == ObjectiveLib.determinant:
+        #     model.objective = pyo.Objective(
+        #         expr=model.obj_cons.egb_fim_block.outputs["log-D-opt"],
+        #         sense=pyo.maximize,
+        #     )
+        # elif self.objective_option == ObjectiveLib.minimum_eigenvalue:
+        #     model.objective = pyo.Objective(
+        #         expr=model.obj_cons.egb_fim_block.outputs["E-opt"], sense=pyo.maximize
+        #     )
+        # elif self.objective_option == ObjectiveLib.condition_number:
+        #     model.objective = pyo.Objective(
+        #         expr=model.obj_cons.egb_fim_block.outputs["ME-opt"], sense=pyo.minimize
+        #     )
         # Else error not needed for spurious objective
         # options as the error will always appear
         # when creating the FIMExternalGreyBox block

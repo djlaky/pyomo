@@ -184,11 +184,21 @@ def sqp(
         nlp.set_primals(z.get_block(0))
         nlp.set_duals(z.get_block(1))
 
+        # grad_lag = (
+        #     nlp.evaluate_grad_objective()
+        #     + nlp.evaluate_jacobian_eq().transpose() * z.get_block(1)
+        # )
         grad_lag = (
-            nlp.evaluate_grad_objective()
-            + nlp.evaluate_jacobian_eq().transpose() * z.get_block(1)
+                nlp.evaluate_grad_objective()
+                + nlp.evaluate_jacobian().transpose() * z.get_block(1)
         )
-        residuals = nlp.evaluate_eq_constraints()
+        print("\n")
+        print(nlp.evaluate_grad_objective())
+        print(nlp.evaluate_jacobian().transpose() * z.get_block(1))
+        print("\n")
+
+        # residuals = nlp.evaluate_eq_constraints()
+        residuals = nlp.evaluate_constraints()
 
         if output:
             print(
@@ -199,15 +209,18 @@ def sqp(
             break
 
         kkt.set_block(0, 0, nlp.evaluate_hessian_lag())
-        kkt.set_block(1, 0, nlp.evaluate_jacobian_eq())
-        kkt.set_block(0, 1, nlp.evaluate_jacobian_eq().transpose())
+        kkt.set_block(1, 0, nlp.evaluate_jacobian())
+        kkt.set_block(0, 1, nlp.evaluate_jacobian().transpose())
+        # kkt.set_block(1, 0, nlp.evaluate_jacobian_eq())
+        # kkt.set_block(0, 1, nlp.evaluate_jacobian_eq().transpose())
 
         rhs.set_block(0, grad_lag)
         rhs.set_block(1, residuals)
 
         delta, res = linear_solver.solve(kkt, -rhs)
         assert res.status == LinearSolverStatus.successful
-        z += delta
+        if _iter != 0:
+            z += delta
 
 
 def load_solution(m: pyo.ConcreteModel(), nlp: PyomoNLP):

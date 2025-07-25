@@ -88,6 +88,13 @@ class FIMExternalGreyBox(
         objective_option = ObjectiveLib(objective_option)
         self.objective_option = objective_option
 
+        # 1 --> minimize, -1 for maximization
+        self.sense = 1
+
+        if (self.objective_option == ObjectiveLib.determinant or
+                self.objective_option == ObjectiveLib.minimum_eigenvalue):
+            self.sense = -1
+
         # Create logger for FIM egb object
         self.logger = logging.getLogger(__name__)
 
@@ -132,38 +139,14 @@ class FIMExternalGreyBox(
         )
         return input_names_list
 
+    def has_objective(self):
+        return True
+
     def equality_constraint_names(self):
         # TODO: Are there any objectives that will have constraints?
         return []
 
-    def output_names(self):
-        # TODO: add output name for the variable. This may have to be
-        # an input from the user. Or it could depend on the usage of
-        # the ObjectiveLib Enum object, which should have an associated
-        # name for the objective function at all times.
-        from pyomo.contrib.doe import ObjectiveLib
-
-        if self.objective_option == ObjectiveLib.trace:
-            obj_name = "A-opt"
-        elif self.objective_option == ObjectiveLib.determinant:
-            obj_name = "log-D-opt"
-        elif self.objective_option == ObjectiveLib.minimum_eigenvalue:
-            obj_name = "E-opt"
-        elif self.objective_option == ObjectiveLib.condition_number:
-            obj_name = "ME-opt"
-        else:
-            ObjectiveLib(self.objective_option)
-        return [obj_name]
-
-    def set_input_values(self, input_values):
-        # Set initial values to be flattened initial FIM (aligns with input names)
-        np.copyto(self._input_values, input_values)
-
-    def evaluate_equality_constraints(self):
-        # TODO: are there any objectives that will have constraints?
-        return None
-
-    def evaluate_outputs(self):
+    def evaluate_objective(self):
         # Evaluates the objective value for the specified
         # ObjectiveLib type.
         current_FIM = self._get_FIM()
@@ -189,7 +172,63 @@ class FIMExternalGreyBox(
         else:
             ObjectiveLib(self.objective_option)
 
-        return np.asarray([obj_value], dtype=np.float64)
+        return obj_value * self.sense
+
+
+    # def output_names(self):
+    #     # TODO: add output name for the variable. This may have to be
+    #     # an input from the user. Or it could depend on the usage of
+    #     # the ObjectiveLib Enum object, which should have an associated
+    #     # name for the objective function at all times.
+    #     from pyomo.contrib.doe import ObjectiveLib
+    #
+    #     if self.objective_option == ObjectiveLib.trace:
+    #         obj_name = "A-opt"
+    #     elif self.objective_option == ObjectiveLib.determinant:
+    #         obj_name = "log-D-opt"
+    #     elif self.objective_option == ObjectiveLib.minimum_eigenvalue:
+    #         obj_name = "E-opt"
+    #     elif self.objective_option == ObjectiveLib.condition_number:
+    #         obj_name = "ME-opt"
+    #     else:
+    #         ObjectiveLib(self.objective_option)
+    #     return [obj_name]
+
+    def set_input_values(self, input_values):
+        # Set initial values to be flattened initial FIM (aligns with input names)
+        np.copyto(self._input_values, input_values)
+
+    def evaluate_equality_constraints(self):
+        # TODO: are there any objectives that will have constraints?
+        return None
+
+    # def evaluate_outputs(self):
+    #     # Evaluates the objective value for the specified
+    #     # ObjectiveLib type.
+    #     current_FIM = self._get_FIM()
+    #
+    #     M = np.asarray(current_FIM, dtype=np.float64).reshape(
+    #         self._n_params, self._n_params
+    #     )
+    #
+    #     # Change objective value based on ObjectiveLib type.
+    #     from pyomo.contrib.doe import ObjectiveLib
+    #
+    #     if self.objective_option == ObjectiveLib.trace:
+    #         obj_value = np.trace(np.linalg.pinv(M))
+    #     elif self.objective_option == ObjectiveLib.determinant:
+    #         (sign, logdet) = np.linalg.slogdet(M)
+    #         obj_value = logdet
+    #     elif self.objective_option == ObjectiveLib.minimum_eigenvalue:
+    #         eig, _ = np.linalg.eig(M)
+    #         obj_value = np.min(eig)
+    #     elif self.objective_option == ObjectiveLib.condition_number:
+    #         eig, _ = np.linalg.eig(M)
+    #         obj_value = np.max(eig) / np.min(eig)
+    #     else:
+    #         ObjectiveLib(self.objective_option)
+    #
+    #     return np.asarray([obj_value], dtype=np.float64)
 
     def finalize_block_construction(self, pyomo_block):
         # Set bounds on the inputs/outputs
@@ -202,22 +241,22 @@ class FIMExternalGreyBox(
                 self._masking_matrix > 0
             ][ind]
 
-        # Initialize log_determinant value
-        from pyomo.contrib.doe import ObjectiveLib
-
-        # Calculate initial values for the output
-        output_value = self.evaluate_outputs()[0]
-
-        # Set the value of the output for the given
-        # objective function.
-        if self.objective_option == ObjectiveLib.trace:
-            pyomo_block.outputs["A-opt"] = output_value
-        elif self.objective_option == ObjectiveLib.determinant:
-            pyomo_block.outputs["log-D-opt"] = output_value
-        elif self.objective_option == ObjectiveLib.minimum_eigenvalue:
-            pyomo_block.outputs["E-opt"] = output_value
-        elif self.objective_option == ObjectiveLib.condition_number:
-            pyomo_block.outputs["ME-opt"] = output_value
+        # # Initialize log_determinant value
+        # from pyomo.contrib.doe import ObjectiveLib
+        #
+        # # Calculate initial values for the output
+        # output_value = self.evaluate_outputs()[0]
+        #
+        # # Set the value of the output for the given
+        # # objective function.
+        # if self.objective_option == ObjectiveLib.trace:
+        #     pyomo_block.outputs["A-opt"] = output_value
+        # elif self.objective_option == ObjectiveLib.determinant:
+        #     pyomo_block.outputs["log-D-opt"] = output_value
+        # elif self.objective_option == ObjectiveLib.minimum_eigenvalue:
+        #     pyomo_block.outputs["E-opt"] = output_value
+        # elif self.objective_option == ObjectiveLib.condition_number:
+        #     pyomo_block.outputs["ME-opt"] = output_value
 
     def evaluate_jacobian_equality_constraints(self):
         # TODO: Do any objectives require constraints?
@@ -225,10 +264,11 @@ class FIMExternalGreyBox(
         # Returns coo_matrix of the correct shape
         return None
 
-    def evaluate_jacobian_outputs(self):
+    def evaluate_grad_objective(self):
         # Compute the jacobian of the objective function with
         # respect to the fisher information matrix. Then return
         # a coo_matrix that aligns with what IPOPT will expect.
+        print("HERE!")
         current_FIM = self._get_FIM()
 
         M = np.asarray(current_FIM, dtype=np.float64).reshape(
@@ -317,9 +357,13 @@ class FIMExternalGreyBox(
         M_cols = np.arange(len(jac_M.flatten()))
 
         # Returns coo_matrix of the correct shape
-        return scipy.sparse.coo_matrix(
-            (jac_M.flatten(), (M_rows, M_cols)), shape=(1, len(jac_M.flatten()))
-        )
+        # return scipy.sparse.coo_matrix(
+        #     (jac_M.flatten(), (M_rows, M_cols)), shape=(1, len(jac_M.flatten()))
+        # )
+
+        #print(jac_M)
+
+        return np.asarray(jac_M) * self.sense
 
     # Beyond here is for Hessian information
     def set_equality_constraint_multipliers(self, eq_con_multiplier_values):
@@ -341,7 +385,7 @@ class FIMExternalGreyBox(
         # No constraints so this returns `None`
         return None
 
-    def evaluate_hessian_outputs(self, FIM=None):
+    def evaluate_hessian_objective(self, FIM=None):
         # TODO: significant bookkeeping if the hessian's require vectorized
         # operations. Just need mapping that works well and we are good.
         current_FIM = self._get_FIM()
@@ -489,6 +533,6 @@ class FIMExternalGreyBox(
 
         # Returns coo_matrix of the correct shape
         return scipy.sparse.coo_matrix(
-            (np.asarray(hess_vals), (hess_rows, hess_cols)),
+            (np.asarray(hess_vals) * self.sense, (hess_rows, hess_cols)),
             shape=(self._n_inputs, self._n_inputs),
         )

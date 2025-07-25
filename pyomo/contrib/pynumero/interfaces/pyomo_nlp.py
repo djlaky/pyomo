@@ -1328,6 +1328,7 @@ class _ExternalGreyBoxModelHelper(object):
         # compute the jacobian of h(x) w.r.t. x
         # J_h(x) = [Jw_eq(Pu*x); Jw_o(Pu*x)-Po*x]
 
+        print("HERE EVALUATE JACOBIAN")
         # Jw_eq(x)
         eq_jac = None
         if self._ex_model.n_equality_constraints() > 0:
