@@ -428,6 +428,8 @@ class DesignOfExperiments:
         if hasattr(model, "determinant"):
             model.determinant.value = np.linalg.det(np.array(self.get_FIM()))
 
+        model.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT_EXPORT)
+
         # Solve the full model, which has now been initialized with the square solve
         if self.use_grey_box:
             res, nlp = self.grey_box_solver.solve(model, tee=self.grey_box_tee, return_nlp=True)
