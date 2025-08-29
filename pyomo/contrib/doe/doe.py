@@ -97,6 +97,10 @@ class DesignOfExperiments:
         logger_level=logging.WARNING,
         _Cholesky_option=True,
         _only_compute_fim_lower=True,
+        ub_dec_flag=False,
+        ub_dec=None,
+        lb_obj_flag=False,
+        lb_obj=None,
     ):
         """
         This package enables model-based design of experiments analysis with Pyomo.
@@ -253,6 +257,12 @@ class DesignOfExperiments:
         # May need this attribute for more complicated structures?
         # (i.e., no model rebuilding for large models with sequential)
         self._built_scenarios = False
+        
+        # Debugging things
+        self.ub_dec_flag = ub_dec_flag
+        self.ub_dec = ub_dec
+        self.lb_obj_flag = lb_obj_flag
+        self.lb_obj = lb_obj
 
     # Perform doe
     def run_doe(self, model=None, results_file=None):
@@ -343,6 +353,8 @@ class DesignOfExperiments:
 
         # Reactivate objective and unfix experimental design decisions
         for comp in model.scenario_blocks[0].experiment_inputs:
+            if self.ub_dec_flag:
+                comp.setub(ub_dec)
             comp.unfix()
         model.objective.activate()
         model.obj_cons.activate()
@@ -1397,6 +1409,9 @@ class DesignOfExperiments:
                 expr=2 * sum(pyo.log10(model.L[j, j]) for j in model.parameter_names),
                 sense=pyo.maximize,
             )
+            
+            if self.lb_obj_flag:
+                model.objective_lb = pyo.Constraint(expr=2 * sum(pyo.log10(model.L[j, j]) for j in model.parameter_names) >= self.lb_obj)
 
         elif self.objective_option == ObjectiveLib.determinant:
             # if not Cholesky but determinant, calculating
@@ -1480,6 +1495,8 @@ class DesignOfExperiments:
                 expr=model.obj_cons.egb_fim_block.outputs["log-D-opt"],
                 sense=pyo.maximize,
             )
+            if self.lb_obj_flag:
+                model.objective_lb = pyo.Constraint(expr=pyo.log(model.obj_cons.egb_fim_block.outputs["log-D-opt"]) / pyo.log(10) >= self.lb_obj)
         elif self.objective_option == ObjectiveLib.minimum_eigenvalue:
             model.objective = pyo.Objective(
                 expr=model.obj_cons.egb_fim_block.outputs["E-opt"], sense=pyo.maximize
